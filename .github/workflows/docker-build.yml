@@ -1,52 +1,47 @@
 name: Build and Publish Docker Image
 
 on:
-    push:
-        branches: [ main ]
+  push:
+    branches: [ main ]
 
 jobs:
-    docker:
-        runs-on: ubuntu-latest
+  docker:
+    runs-on: ubuntu-latest
 
-        permissions:
-            contents: read
-            packages: write
+    permissions:
+      contents: read
+      packages: write
 
-        steps:
+    steps:
 
-            - name: Checkout repository
-              uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-            - name: Login to GitHub Container Registry
-              run: echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+      - name: Login to GitHub Container Registry
+        run: echo ${{ secrets.GITHUB_TOKEN }} | docker login ghcr.io -u ${{ github.actor }} --password-stdin
 
-            - name: Set lowercase repo name
-              run: echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
+      - name: Set lowercase repo name
+        run: echo "REPO_LC=${GITHUB_REPOSITORY,,}" >> $GITHUB_ENV
 
-            - name: Build Docker Image
-              run: |
-                docker build -t ghcr.io/${{ env.REPO_LC }}/node-app:latest .
-            
-            - name: Push Docker image
-              run: |
-                docker push ghcr.io/${{ env.REPO_LC }}/node-app:latest
-        
-            - name: Deploy image to Railway staging
-              run: |
-                SHA_TAG=$(echo "${{ needs.docker.outputs.image }}" \
-                    | tr ',' '\n' \
-                    | grep 'sha-' \
-                    | head -1 \
-                    | xargs)
+      - name: Build Docker Image
+        run: |
+          docker build -t ghcr.io/${{ env.REPO_LC }}/node-app:latest .
 
-                echo "Deploying image tag: $SHA_TAG"
+      - name: Push Docker Image
+        run: |
+          docker push ghcr.io/${{ env.REPO_LC }}/node-app:latest
 
-                curl -s -X POST \
-                    -H "Authorization: Bearer ${{ secrets.RAILWAY_TOKEN }}"
-                    -H "Content-type: application/json" \
-                    -d "{
-                    \"query\": \"mutation { serviceInstanceRedeploy(serviceId: \\\"${{ secrets.RAILWAY_SERVICE_ID }}\\\", environmentId: \\\"${{ secrets.RAILWAY_ENVIRONMENT_ID }}\\\") }\"
-                    }" \
-                    https://backboard.railway.app/graphql/v2
+      - name: Deploy image to Railway staging
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_SERVICE_ID: ${{ secrets.RAILWAY_SERVICE_ID }}
+          RAILWAY_ENVIRONMENT_ID: ${{ secrets.RAILWAY_ENVIRONMENT_ID }}
+        run: |
+            echo "Triggering Railway redeploy..."
 
-                echo "Staging deployment triggered"
+            curl -X POST https://backboard.railway.app/graphql/v2 \
+              -H "Authorization: Bearer $RAILWAY_TOKEN" \
+              -H "Content-Type: application/json" \
+              -d "{\"query\": \"mutation { serviceInstanceRedeploy(serviceId: \\\"$RAILWAY_SERVICE_ID\\\", environmentId: \\\"$RAILWAY_ENVIRONMENT_ID\\\") }\"}"
+
+            echo "Deployment triggered"
